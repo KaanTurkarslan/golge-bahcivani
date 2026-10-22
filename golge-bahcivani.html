@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gölge Bahçıvanı</title>
+<style>
+  /* ================== TEMEL STİLLER ================== */
+  :root {
+    --ink: #4b4363;
+    --muted: #8a82a0;
+    --card: #fdfbff;
+    --pink: #ff9eb5;
+    --peach: #ffb88c;
+    --lilac: #efe9fb;
+    --mint: #8fd3b6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: linear-gradient(160deg, #fde4ec, #e3f1ff);
+    font-family: ui-rounded, "SF Pro Rounded", "Nunito", "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Oyun alanı: mobilde tam ekran, masaüstünde ortalanmış dikey sütun */
+  #wrap {
+    position: relative;
+    width: min(100vw, 520px);
+    height: 100vh;
+    height: 100dvh;
+    margin: 0 auto;
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(120, 100, 150, .18);
+  }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  #safeProbe { position: absolute; top: 0; left: 0; width: 0; height: env(safe-area-inset-top, 0px); visibility: hidden; }
+
+  /* ================== EKRANLAR (BAŞLANGIÇ / BİTİŞ) ================== */
+  .overlay {
+    position: absolute; inset: 0;
+    display: flex; overflow-y: auto;
+    padding: 20px;
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    background: rgba(253, 246, 255, .55);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    transition: opacity .3s;
+  }
+  .overlay.hidden { opacity: 0; pointer-events: none; }
+  .card {
+    margin: auto;
+    width: 100%; max-width: 360px;
+    background: var(--card);
+    border-radius: 28px;
+    padding: 26px 22px 22px;
+    text-align: center;
+    box-shadow: 0 14px 34px rgba(90, 70, 130, .2);
+  }
+  .card h1 { font-size: 30px; line-height: 1.15; margin-bottom: 4px; }
+  .card h2 { font-size: 17px; margin-top: 14px; }
+  .card p { color: var(--muted); line-height: 1.5; font-size: 15px; margin: 8px 0; }
+  .hero-emoji { font-size: 46px; margin-bottom: 6px; }
+  .legend {
+    display: grid; grid-template-columns: 54px 1fr; gap: 8px 8px;
+    align-items: center; text-align: left;
+    margin: 14px 0 18px; font-size: 14px;
+    background: var(--lilac); border-radius: 18px; padding: 12px 14px;
+  }
+  .legend .ico { font-size: 20px; text-align: center; }
+  .curtain-ico {
+    display: inline-block; width: 12px; height: 24px; vertical-align: middle;
+    border-top: 4px solid #8a7a6a; border-radius: 2px;
+    background: repeating-linear-gradient(90deg, #b9a7f2 0 3px, #a28ee8 3px 5px);
+  }
+  button {
+    display: block; width: 100%;
+    border: 0; border-radius: 18px;
+    padding: 15px 18px;
+    font-family: inherit; font-size: 18px; font-weight: 800;
+    color: #fff; cursor: pointer;
+    background: linear-gradient(135deg, var(--pink), var(--peach));
+    box-shadow: 0 6px 0 #e3809a;
+    transition: transform .08s, box-shadow .08s;
+  }
+  button:active { transform: translateY(4px); box-shadow: 0 2px 0 #e3809a; }
+  button:focus-visible { outline: 3px solid #7b6bd6; outline-offset: 3px; }
+  button.secondary {
+    margin-top: 12px; font-size: 16px; color: var(--ink);
+    background: var(--lilac); box-shadow: 0 4px 0 #d8cfea;
+  }
+  button.secondary:active { box-shadow: 0 1px 0 #d8cfea; }
+  .stars { font-size: 42px; letter-spacing: 6px; margin: 6px 0 2px; }
+  .star-off { opacity: .22; filter: grayscale(1); }
+  .score-row { display: flex; gap: 10px; justify-content: center; margin: 12px 0 6px; }
+  .score-row div { background: var(--lilac); border-radius: 16px; padding: 10px 14px; min-width: 112px; }
+  .score-row small { display: block; color: var(--muted); font-size: 13px; }
+  .score-row strong { font-size: 26px; }
+  .note { font-size: 14px !important; margin-bottom: 16px !important; }
+  @media (prefers-reduced-motion: reduce) { .overlay { transition: none; } }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="safeProbe"></div>
+
+  <!-- Başlangıç ekranı -->
+  <div id="startScreen" class="overlay">
+    <div class="card">
+      <div class="hero-emoji">🌵🌞🌿</div>
+      <h1>Gölge Bahçıvanı</h1>
+      <h2>Nasıl Oynanır?</h2>
+      <p>Güneş gün boyunca gökyüzünde ilerler. Bulutu, şemsiyeyi ve perdeyi sürükleyerek gölge düşür. Her bitkiyi sevdiği ortamda tut ve gün batana kadar hepsini yaşat!</p>
+      <div class="legend">
+        <span class="ico">🌵☀️</span><span><b>Kaktüs</b> güneşi sever</span>
+        <span class="ico">🌿🌙</span><span><b>Eğrelti otu</b> gölgeyi sever</span>
+        <span class="ico">☁️</span><span><b>Bulut</b>: geniş gölge</span>
+        <span class="ico">☂️</span><span><b>Şemsiye</b>: orta gölge</span>
+        <span class="ico"><i class="curtain-ico"></i></span><span><b>Perde</b>: ince ama uzun gölge</span>
+      </div>
+      <button id="btnStart">Başla</button>
+    </div>
+  </div>
+
+  <!-- Bitiş ekranı -->
+  <div id="endScreen" class="overlay hidden">
+    <div class="card">
+      <h1 id="endTitle">Gün Bitti!</h1>
+      <div class="stars" id="endStars"></div>
+      <p id="endInfo"></p>
+      <div class="score-row">
+        <div><small>Bu tur</small><strong id="endScore">0</strong></div>
+        <div><small>Toplam</small><strong id="endTotal">0</strong></div>
+      </div>
+      <p class="note">Sonraki turda güneş daha hızlı ilerleyecek ☀️💨</p>
+      <button id="btnNext">Tekrar Oyna</button>
+      <button id="btnMenu" class="secondary">Ana Menü</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   GÖLGE BAHÇIVANI
+   Bitkileri değil, gölge kaynaklarını yönet!
+   ========================================================= */
+
+// ================== KURULUM ==================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const safeProbe = document.getElementById('safeProbe');
+
+const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+const UI_FONT = 'ui-rounded,"SF Pro Rounded","Nunito","Segoe UI",system-ui,sans-serif';
+
+let W = 0, H = 0, DPR = 1, safeTop = 0;
+
+// Tuvali ekran boyutuna ve piksel yoğunluğuna göre ayarla
+function resize() {
+  const r = canvas.getBoundingClientRect();
+  W = r.width;
+  H = r.height;
+  DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+  canvas.width = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  safeTop = safeProbe.offsetHeight || 0;
+  if (game.casters) game.casters.forEach(clampCaster);
+}
+
+// ================== OYUN DURUMU ==================
+const game = {
+  state: 'menu',      // menu | countdown | playing | end
+  round: 1,
+  totalScore: 0,
+  t: 0,               // gün ilerlemesi (0 = sabah, 1 = akşam)
+  dayDuration: 60,    // bir günün süresi (saniye)
+  loss: 9,            // yanlış ortamda saniyede kaybedilen sağlık
+  gain: 6,            // doğru ortamda saniyede kazanılan sağlık
+  countdown: 0,
+  hintTimer: 0,
+  time: 0,            // animasyonlar için genel sayaç
+  plants: [],
+  casters: [],
+  shadows: []
+};
+
+// ================== YARDIMCI FONKSİYONLAR ==================
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function mixColor(c1, c2, t) {
+  return `rgb(${Math.round(lerp(c1[0], c2[0], t))},${Math.round(lerp(c1[1], c2[1], t))},${Math.round(lerp(c1[2], c2[2], t))})`;
+}
+
+// Mevcut yola yuvarlak köşeli dikdörtgen ekler
+function addRoundRect(x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function roundRectPath(x, y, w, h, r) { ctx.beginPath(); addRoundRect(x, y, w, h, r); }
+
+function drawEmoji(ch, x, y, size) {
+  ctx.font = `${size}px ${EMOJI_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(ch, x, y);
+}
+
+// Noktaların dışbükey zarfı (gölge hacmini çizmek için)
+function convexHull(pts) {
+  pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [], upper = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  upper.pop(); lower.pop();
+  return lower.concat(upper);
+}
+
+// ================== YERLEŞİM ==================
+const groundY = () => H * 0.78;              // bitkilerin durduğu zemin çizgisi
+const hudBottom = () => safeTop + 70;        // üst bilgi çubuğunun alt sınırı
+const sunRadius = () => Math.max(18, W * 0.05);
+
+// Güneş soldan sağa bir yay çizer
+function sunPos() {
+  const t = game.t;
+  const x = W * (0.08 + 0.84 * t);
+  const top = hudBottom() + sunRadius() + 10;
+  const y = top + (1 - Math.sin(Math.PI * t)) * H * 0.07;
+  return { x, y };
+}
+
+// Işığın eğimi: sabah gölgeler sağa, akşam sola uzar
+const MAX_ANGLE = 0.78;
+function lightK() {
+  const angle = (game.t - 0.5) * 2 * MAX_ANGLE;
+  return -Math.tan(angle);
+}
+
+// ================== GÖLGE KAYNAKLARI ==================
+function makeCasters() {
+  const jitter = () => (Math.random() - 0.5) * 0.1;
+  const list = [
+    { type: 'curtain',  xf: 0.5 + jitter(),  yf: 0.36 },
+    { type: 'umbrella', xf: 0.78 + jitter(), yf: 0.46 },
+    { type: 'cloud',    xf: 0.25 + jitter(), yf: 0.28 }
+  ];
+  list.forEach(clampCaster);
+  return list;
+}
+
+// Her kaynağın gölge düşüren gövdesinin boyutu
+function casterSize(c) {
+  switch (c.type) {
+    case 'cloud':    return { w: W * 0.30, h: W * 0.10 };
+    case 'umbrella': return { w: W * 0.19, h: W * 0.08 };
+    case 'curtain':  return { w: W * 0.06, h: W * 0.34 };
+  }
+}
+
+function casterRect(c) {
+  const s = casterSize(c);
+  const cx = c.xf * W, cy = c.yf * H;
+  return { x: cx - s.w / 2, y: cy - s.h / 2, w: s.w, h: s.h, cx, cy };
+}
+
+// Kaynakları gökyüzü alanında tut (bitkilerin üstüne inmesin)
+function clampCaster(c) {
+  if (!W || !H) return;
+  const s = casterSize(c);
+  const extra = c.type === 'umbrella' ? s.h * 1.6 : 0; // şemsiye sapı
+  const minY = hudBottom() + s.h / 2 + 8;
+  const maxY = Math.max(minY, groundY() - 100 - s.h / 2 - extra);
+  c.xf = clamp(c.xf * W, 0, W) / W;
+  c.yf = clamp(c.yf * H, minY, maxY) / H;
+}
+
+// Bir kaynağın zemindeki gölgesini hesapla
+function casterShadow(c, k) {
+  const r = casterRect(c), gy = groundY();
+  const corners = [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]];
+  const proj = corners.map(([px, py]) => [px + (gy - py) * k, gy]);
+  const xs = proj.map(p => p[0]);
+  return { a: Math.min(...xs), b: Math.max(...xs), hull: convexHull(corners.concat(proj)) };
+}
+
+function computeShadows() {
+  const k = lightK();
+  game.shadows = game.casters.map(c => casterShadow(c, k));
+}
+
+// ================== BİTKİLER ==================
+function makePlants(n) {
+  const types = [];
+  for (let i = 0; i < n; i++) types.push(Math.random() < 0.5 ? 'cactus' : 'fern');
+  // En az bir kaktüs ve bir eğrelti otu olsun
+  if (types.every(t => t === types[0])) {
+    types[Math.floor(Math.random() * n)] = types[0] === 'cactus' ? 'fern' : 'cactus';
+  }
+  return types.map((type, i) => ({
+    type,
+    xf: (i + 0.5) / n + (Math.random() - 0.5) * (0.4 / n),
+    health: 70,
+    alive: true,
+    happy: true,
+    shaded: false
+  }));
+}
+
+// ================== TUR YÖNETİMİ ==================
+function setupRound() {
+  const r = game.round;
+  game.dayDuration = Math.max(35, 60 - (r - 1) * 5); // her tur güneş hızlanır
+  game.loss = 9 + (r - 1) * 1.5;
+  game.gain = 6;
+  game.plants = makePlants(Math.min(6, 3 + r));     // 4, 5, sonra 6 bitki
+  game.casters = makeCasters();
+  game.t = 0;
+  game.countdown = 3;
+  game.hintTimer = r === 1 ? 6 : 3;
+  game.state = 'countdown';
+}
+
+function endRound() {
+  game.state = 'end';
+  const n = game.plants.length;
+  const survivors = game.plants.filter(p => p.alive);
+  const s = survivors.length;
+  const stars = s === n ? 3 : s / n >= 0.6 ? 2 : s > 0 ? 1 : 0;
+  const score = s * 100 + Math.round(survivors.reduce((sum, p) => sum + p.health, 0));
+  game.totalScore += score;
+
+  const titles = ['Bahçe Kurudu 🥀', 'Kıl Payı! 🌱', 'Güzel İş! 🌼', 'Muhteşem Bahçe! 🌻'];
+  document.getElementById('endTitle').textContent = titles[stars];
+  document.getElementById('endStars').innerHTML =
+    [0, 1, 2].map(i => `<span class="${i < stars ? '' : 'star-off'}">⭐</span>`).join('');
+  document.getElementById('endInfo').textContent = `${game.round}. tur bitti. Hayatta kalan bitki: ${s}/${n}`;
+  document.getElementById('endScore').textContent = score;
+  document.getElementById('endTotal').textContent = game.totalScore;
+
+  setTimeout(() => document.getElementById('endScreen').classList.remove('hidden'), 700);
+}
+
+// ================== GÜNCELLEME ==================
+function update(dt) {
+  game.time += dt;
+
+  if (game.state === 'menu') {
+    // Menüde arka plan sahnesi yavaşça canlansın
+    game.t = 0.5 + 0.35 * Math.sin(game.time * 0.25);
+  } else if (game.state === 'countdown') {
+    game.countdown -= dt;
+    if (game.countdown <= 0) game.state = 'playing';
+  } else if (game.state === 'playing') {
+    game.hintTimer = Math.max(0, game.hintTimer - dt);
+    game.t = Math.min(1, game.t + dt / game.dayDuration);
+  }
+
+  computeShadows();
+
+  // Her bitkinin güneşte mi gölgede mi olduğunu belirle
+  let aliveCount = 0;
+  for (const p of game.plants) {
+    if (!p.alive) continue;
+    const x = p.xf * W;
+    p.shaded = game.shadows.some(s => x >= s.a && x <= s.b);
+    p.happy = p.type === 'fern' ? p.shaded : !p.shaded;
+
+    if (game.state === 'playing') {
+      p.health = Math.min(100, p.health + (p.happy ? game.gain : -game.loss) * dt);
+      if (p.health <= 0) { p.health = 0; p.alive = false; }
+    }
+    if (p.alive) aliveCount++;
+  }
+
+  if (game.state === 'playing' && (game.t >= 1 || aliveCount === 0)) endRound();
+}
+
+// ================== ÇİZİM: ARKA PLAN ==================
+const SKY_KEYS = [
+  { t: 0,   top: [255, 205, 190], bot: [255, 238, 212] }, // sabah
+  { t: 0.5, top: [160, 210, 255], bot: [228, 245, 255] }, // öğle
+  { t: 1,   top: [245, 160, 192], bot: [255, 212, 172] }  // akşam
+];
+
+function drawSky() {
+  const t = game.t;
+  const [k0, k1] = t < 0.5 ? [SKY_KEYS[0], SKY_KEYS[1]] : [SKY_KEYS[1], SKY_KEYS[2]];
+  const lt = (t - k0.t) / (k1.t - k0.t);
+  const g = ctx.createLinearGradient(0, 0, 0, groundY());
+  g.addColorStop(0, mixColor(k0.top, k1.top, lt));
+  g.addColorStop(1, mixColor(k0.bot, k1.bot, lt));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawSun() {
+  const s = sunPos(), R = sunRadius();
+  // Parıltı
+  const g = ctx.createRadialGradient(s.x, s.y, R * 0.5, s.x, s.y, R * 3);
+  g.addColorStop(0, 'rgba(255,220,110,0.55)');
+  g.addColorStop(1, 'rgba(255,220,110,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(s.x, s.y, R * 3, 0, Math.PI * 2); ctx.fill();
+  // Dönen ışınlar
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(game.time * 0.4);
+  ctx.strokeStyle = 'rgba(255,190,80,0.85)';
+  ctx.lineWidth = 3; ctx.lineCap = 'round';
+  for (let i = 0; i < 12; i++) {
+    ctx.rotate(Math.PI / 6);
+    ctx.beginPath(); ctx.moveTo(R + 5, 0); ctx.lineTo(R + 12, 0); ctx.stroke();
+  }
+  ctx.restore();
+  // Gövde ve sevimli yüz
+  ctx.fillStyle = '#ffd45e';
+  ctx.beginPath(); ctx.arc(s.x, s.y, R, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#7a5a3a';
+  ctx.beginPath(); ctx.arc(s.x - R * 0.33, s.y - R * 0.1, R * 0.09, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(s.x + R * 0.33, s.y - R * 0.1, R * 0.09, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#7a5a3a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(s.x, s.y + R * 0.1, R * 0.28, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,140,150,0.5)';
+  ctx.beginPath(); ctx.arc(s.x - R * 0.55, s.y + R * 0.2, R * 0.15, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(s.x + R * 0.55, s.y + R * 0.2, R * 0.15, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawHills(gy) {
+  ctx.fillStyle = '#d6edc6';
+  ctx.beginPath(); ctx.moveTo(0, gy);
+  for (let x = 0; x <= W + 10; x += 10) ctx.lineTo(x, gy - 44 - Math.sin(x / W * Math.PI * 2 + 0.5) * 18);
+  ctx.lineTo(W, gy); ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = '#c4e4b0';
+  ctx.beginPath(); ctx.moveTo(0, gy);
+  for (let x = 0; x <= W + 10; x += 10) ctx.lineTo(x, gy - 22 - Math.sin(x / W * Math.PI * 3 + 2) * 10);
+  ctx.lineTo(W, gy); ctx.closePath(); ctx.fill();
+}
+
+// Güneş ışığı alanları hafif sarımsı görünsün
+function drawSunlight() {
+  const s = sunPos();
+  const g = ctx.createRadialGradient(s.x, s.y, 10, s.x, s.y, H * 0.9);
+  g.addColorStop(0, 'rgba(255,236,150,0.38)');
+  g.addColorStop(1, 'rgba(255,236,150,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawGround(gy) {
+  const g = ctx.createLinearGradient(0, gy, 0, H);
+  g.addColorStop(0, '#b4e29a');
+  g.addColorStop(1, '#9cd189');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, gy - 4, W, H - gy + 4);
+  // Çimenin üstüne küçük süs çiçekleri
+  const space = Math.max(1, H - gy - 50);
+  const colors = ['#ffd1dc', '#fff3b0', '#e4dcff'];
+  for (let i = 0; i < 14; i++) {
+    const x = (i * 73.3 + 20) % W;
+    const y = gy + 40 + (i * 37) % space;
+    ctx.fillStyle = colors[i % 3];
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// ================== ÇİZİM: GÖLGELER ==================
+function drawGroundShadows(gy) {
+  ctx.fillStyle = 'rgba(70,60,130,0.26)';
+  for (const s of game.shadows) {
+    const a = Math.max(-20, s.a), b = Math.min(W + 20, s.b);
+    if (b <= a) continue;
+    roundRectPath(a, gy - 8, b - a, 36, 12);
+    ctx.fill();
+  }
+}
+
+function drawShadowVolumes() {
+  ctx.fillStyle = 'rgba(70,60,130,0.12)';
+  for (const s of game.shadows) {
+    ctx.beginPath();
+    s.hull.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+// ================== ÇİZİM: BİTKİLER ==================
+function plantSize(p) { return 34 + (p.alive ? (p.health / 100) * 8 : 0); }
+
+function drawPlantBody(p, gy) {
+  const x = p.xf * W;
+  // Saksı
+  ctx.fillStyle = p.alive ? '#f2ab8c' : '#d7c4bb';
+  ctx.beginPath();
+  ctx.moveTo(x - 17, gy - 22); ctx.lineTo(x + 17, gy - 22);
+  ctx.lineTo(x + 13, gy + 4); ctx.lineTo(x - 13, gy + 4);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = p.alive ? '#e5917a' : '#c9b5ab';
+  roundRectPath(x - 20, gy - 28, 40, 8, 3); ctx.fill();
+
+  // Bitki: mutsuzsa titrer
+  const unhappy = p.alive && !p.happy && game.state === 'playing';
+  const shake = unhappy ? Math.sin(game.time * 28) * 1.6 : 0;
+  const size = plantSize(p);
+  ctx.globalAlpha = p.alive ? 1 : 0.8;
+  const ch = p.alive ? (p.type === 'cactus' ? '🌵' : '🌿') : '🥀';
+  drawEmoji(ch, x + shake, gy - 28 - size * 0.45, size);
+  ctx.globalAlpha = 1;
+}
+
+function drawPlantUI(p, gy) {
+  const x = p.xf * W;
+  const size = plantSize(p);
+
+  // İhtiyaç balonu (☀️ güneş ister, 🌙 gölge ister)
+  if (p.alive) {
+    const by = gy - 28 - size - 12;
+    const unhappy = !p.happy && game.state === 'playing';
+    ctx.fillStyle = p.type === 'cactus' ? '#fff4c2' : '#e4dcff';
+    ctx.beginPath(); ctx.arc(x, by, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = p.happy ? '#7fd38a' : '#ff7b8a';
+    ctx.lineWidth = unhappy ? 2.5 + Math.abs(Math.sin(game.time * 6)) * 1.5 : 2;
+    ctx.stroke();
+    drawEmoji(p.type === 'cactus' ? '☀️' : '🌙', x, by + 1, 13);
+  }
+
+  // Sağlık barı
+  const bw = 44, bh = 7, bx = x - bw / 2, bY = gy + 12;
+  ctx.fillStyle = 'rgba(60,50,90,0.18)';
+  roundRectPath(bx, bY, bw, bh, 4); ctx.fill();
+  if (p.health > 0) {
+    ctx.fillStyle = p.health > 60 ? '#7fd38a' : p.health > 30 ? '#ffd166' : '#ff8a8a';
+    roundRectPath(bx, bY, Math.max(bh, bw * p.health / 100), bh, 4); ctx.fill();
+  }
+}
+
+// ================== ÇİZİM: GÖLGE KAYNAKLARI ==================
+function drawCloud(r) {
+  const { x, y, w, h } = r;
+  ctx.save();
+  ctx.shadowColor = 'rgba(120,110,170,0.25)';
+  ctx.shadowBlur = 10; ctx.shadowOffsetY = 4;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  const circles = [[x + w * 0.28, y + h * 0.6, h * 0.5], [x + w * 0.5, y + h * 0.4, h * 0.62], [x + w * 0.72, y + h * 0.58, h * 0.52]];
+  for (const [cx, cy, cr] of circles) { ctx.moveTo(cx + cr, cy); ctx.arc(cx, cy, cr, 0, Math.PI * 2); }
+  addRoundRect(x + w * 0.08, y + h * 0.5, w * 0.84, h * 0.5, h * 0.25);
+  ctx.fill();
+  ctx.restore();
+  // Yüz
+  ctx.fillStyle = '#6b6385';
+  ctx.beginPath(); ctx.arc(x + w * 0.42, y + h * 0.62, 2.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + w * 0.58, y + h * 0.62, 2.2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,150,170,0.5)';
+  ctx.beginPath(); ctx.arc(x + w * 0.34, y + h * 0.75, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + w * 0.66, y + h * 0.75, 4, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawUmbrella(r) {
+  const { x, w, h, cx } = r;
+  const by = r.y + h;
+  // Sap
+  ctx.strokeStyle = '#8a6f9e'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx, by);
+  ctx.lineTo(cx, by + h * 1.4);
+  ctx.arc(cx - 6, by + h * 1.4, 6, 0, Math.PI, false);
+  ctx.stroke();
+  // Kubbe
+  ctx.save();
+  ctx.shadowColor = 'rgba(120,110,170,0.25)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3;
+  ctx.beginPath();
+  ctx.ellipse(cx, by, w / 2, h, 0, Math.PI, 2 * Math.PI);
+  ctx.closePath();
+  ctx.fillStyle = '#ff9eb5';
+  ctx.fill();
+  ctx.restore();
+  // Çizgili desen
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(cx, by, w / 2, h, 0, Math.PI, 2 * Math.PI); ctx.closePath(); ctx.clip();
+  ctx.fillStyle = '#ffc9d6';
+  for (let i = 1; i < 4; i += 2) {
+    ctx.beginPath();
+    ctx.moveTo(cx, by - h);
+    ctx.lineTo(x + (w / 4) * i, by);
+    ctx.lineTo(x + (w / 4) * (i + 1), by);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  // Tepe topuzu
+  ctx.fillStyle = '#8a6f9e';
+  ctx.beginPath(); ctx.arc(cx, by - h - 2, 3, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawCurtain(r) {
+  const { x, y, w, h } = r;
+  // Kumaş, dalgalı alt kenar
+  ctx.save();
+  ctx.shadowColor = 'rgba(120,110,170,0.25)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3;
+  ctx.fillStyle = '#b9a7f2';
+  ctx.beginPath();
+  ctx.moveTo(x, y + 2); ctx.lineTo(x + w, y + 2); ctx.lineTo(x + w, y + h);
+  ctx.quadraticCurveTo(x + w * 0.75, y + h + 6, x + w * 0.5, y + h);
+  ctx.quadraticCurveTo(x + w * 0.25, y + h + 6, x, y + h);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // Kıvrımlar
+  ctx.strokeStyle = 'rgba(90,70,170,0.35)'; ctx.lineWidth = 1.5;
+  for (const f of [1 / 3, 2 / 3]) {
+    ctx.beginPath(); ctx.moveTo(x + w * f, y + 4); ctx.lineTo(x + w * f, y + h - 2); ctx.stroke();
+  }
+  // Korniş
+  ctx.strokeStyle = '#8a7a6a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x - 8, y); ctx.lineTo(x + w + 8, y); ctx.stroke();
+  ctx.fillStyle = '#8a7a6a';
+  ctx.beginPath(); ctx.arc(x - 10, y, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + w + 10, y, 4, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawCasters() {
+  for (const c of game.casters) {
+    const r = casterRect(c);
+    const lifted = drag && drag.c === c;
+    ctx.save();
+    if (lifted) { // sürüklenirken hafifçe büyüt
+      ctx.translate(r.cx, r.cy); ctx.scale(1.06, 1.06); ctx.translate(-r.cx, -r.cy);
+    }
+    if (c.type === 'cloud') drawCloud(r);
+    else if (c.type === 'umbrella') drawUmbrella(r);
+    else drawCurtain(r);
+    ctx.restore();
+  }
+}
+
+// ================== ÇİZİM: ARAYÜZ ==================
+function formatClock(t) {
+  const hours = 6 + t * 12;
+  const hh = Math.floor(hours);
+  const mm = Math.floor(((hours - hh) * 60) / 10) * 10;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+function drawHUD() {
+  const pad = 12, top = safeTop + 10, h = 42;
+  ctx.fillStyle = 'rgba(253,251,255,0.85)';
+  roundRectPath(pad, top, W - pad * 2, h, 16); ctx.fill();
+
+  ctx.fillStyle = '#4b4363';
+  ctx.font = `800 15px ${UI_FONT}`;
+  ctx.textBaseline = 'middle';
+  const cy = top + h / 2 + 1;
+
+  ctx.textAlign = 'left';
+  ctx.fillText(`Tur ${game.round}`, pad + 14, cy);
+
+  const remaining = Math.ceil((1 - game.t) * game.dayDuration);
+  ctx.textAlign = 'center';
+  ctx.fillText(`🕒 ${formatClock(game.t)}   ⏳ ${remaining} sn`, W / 2, cy);
+
+  const alive = game.plants.filter(p => p.alive).length;
+  ctx.textAlign = 'right';
+  ctx.fillText(`🌱 ${alive}/${game.plants.length}`, W - pad - 14, cy);
+
+  // Gün ilerleme çubuğu
+  const barY = top + h + 6, barW = W - pad * 2 - 20;
+  ctx.fillStyle = 'rgba(253,251,255,0.7)';
+  roundRectPath(pad + 10, barY, barW, 6, 3); ctx.fill();
+  const g = ctx.createLinearGradient(pad + 10, 0, pad + 10 + barW, 0);
+  g.addColorStop(0, '#ffd45e'); g.addColorStop(1, '#ff9eb5');
+  ctx.fillStyle = g;
+  roundRectPath(pad + 10, barY, Math.max(6, barW * game.t), 6, 3); ctx.fill();
+}
+
+function drawPill(text, x, y) {
+  ctx.font = `800 16px ${UI_FONT}`;
+  const tw = ctx.measureText(text).width + 32;
+  ctx.fillStyle = 'rgba(253,251,255,0.9)';
+  roundRectPath(x - tw / 2, y - 20, tw, 40, 20); ctx.fill();
+  ctx.fillStyle = '#4b4363';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y + 1);
+}
+
+function drawMessages(gy) {
+  // Geri sayım
+  if (game.state === 'countdown') {
+    const n = Math.ceil(game.countdown);
+    const cx = W / 2, cy = H * 0.5;
+    ctx.fillStyle = 'rgba(253,251,255,0.9)';
+    ctx.beginPath(); ctx.arc(cx, cy, 44, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff7f9f';
+    ctx.font = `900 46px ${UI_FONT}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(n, cx, cy + 2);
+    drawPill('Hazır ol! Gölgeleri yerleştir', W / 2, cy - 76);
+  }
+  // İpucu
+  if ((game.state === 'countdown' || game.state === 'playing') && game.hintTimer > 0) {
+    ctx.globalAlpha = Math.min(1, game.hintTimer);
+    drawPill('👆 Bulutu, şemsiyeyi ve perdeyi sürükle', W / 2, gy + (H - gy) / 2 + 14);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ================== ANA ÇİZİM ==================
+function draw() {
+  const gy = groundY();
+  ctx.clearRect(0, 0, W, H);
+  drawSky();
+  drawSun();
+  drawHills(gy);
+  drawSunlight();
+  drawGround(gy);
+  drawGroundShadows(gy);
+  game.plants.forEach(p => drawPlantBody(p, gy));
+  drawShadowVolumes();
+  game.plants.forEach(p => drawPlantUI(p, gy));
+  drawCasters();
+  if (game.state !== 'menu') drawHUD();
+  drawMessages(gy);
+}
+
+// ================== SÜRÜKLEME (FARE + DOKUNMATİK) ==================
+let drag = null;
+
+function pointerPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+// Üstteki kaynaktan başlayarak dokunulan kaynağı bul
+function hitCaster(px, py) {
+  for (let i = game.casters.length - 1; i >= 0; i--) {
+    const c = game.casters[i], r = casterRect(c), pad = 16;
+    const extraBottom = c.type === 'umbrella' ? r.h * 1.6 : 0;
+    if (px >= r.x - pad && px <= r.x + r.w + pad && py >= r.y - pad && py <= r.y + r.h + extraBottom + pad) return i;
+  }
+  return -1;
+}
+
+const canDrag = () => game.state === 'playing' || game.state === 'countdown';
+
+canvas.addEventListener('pointerdown', e => {
+  if (!canDrag() || drag) return;
+  const p = pointerPos(e);
+  const i = hitCaster(p.x, p.y);
+  if (i < 0) return;
+  const c = game.casters.splice(i, 1)[0];
+  game.casters.push(c); // seçilen kaynak en üstte çizilsin
+  drag = { c, dx: p.x - c.xf * W, dy: p.y - c.yf * H, id: e.pointerId };
+  canvas.setPointerCapture(e.pointerId);
+  canvas.style.cursor = 'grabbing';
+  game.hintTimer = Math.min(game.hintTimer, 1);
+});
+
+canvas.addEventListener('pointermove', e => {
+  const p = pointerPos(e);
+  if (drag && e.pointerId === drag.id) {
+    drag.c.xf = (p.x - drag.dx) / W;
+    drag.c.yf = (p.y - drag.dy) / H;
+    clampCaster(drag.c);
+  } else if (e.pointerType === 'mouse') {
+    canvas.style.cursor = canDrag() && hitCaster(p.x, p.y) >= 0 ? 'grab' : 'default';
+  }
+});
+
+function endDrag(e) {
+  if (drag && e.pointerId === drag.id) {
+    drag = null;
+    canvas.style.cursor = 'default';
+  }
+}
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+
+// ================== BUTONLAR ==================
+const startScreen = document.getElementById('startScreen');
+const endScreen = document.getElementById('endScreen');
+
+document.getElementById('btnStart').addEventListener('click', () => {
+  game.round = 1;
+  game.totalScore = 0;
+  startScreen.classList.add('hidden');
+  setupRound();
+});
+
+document.getElementById('btnNext').addEventListener('click', () => {
+  game.round++;
+  endScreen.classList.add('hidden');
+  setupRound();
+});
+
+document.getElementById('btnMenu').addEventListener('click', () => {
+  endScreen.classList.add('hidden');
+  startScreen.classList.remove('hidden');
+  game.state = 'menu';
+  game.plants = makePlants(5);
+  game.casters = makeCasters();
+});
+
+// ================== OYUN DÖNGÜSÜ ==================
+window.addEventListener('resize', resize);
+resize();
+game.plants = makePlants(5);   // menü arka planı için örnek bahçe
+game.casters = makeCasters();
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
